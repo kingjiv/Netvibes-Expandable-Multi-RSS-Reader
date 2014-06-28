@@ -1,0 +1,564 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml"
+    xmlns:widget="http://www.netvibes.com/ns/">
+    <head>
+
+        <!-- Application Metas -->
+        <title>RSS</title>
+        <meta name="author" content="James Montagne" />
+        <meta name="email" content="kingjames_iv@yahoo.com" />
+        <meta name="description" content="Expandable Multi-feed RSS Reader with the ability to combine multiple feeds and display in one list. " />
+        <meta name="version" content="2.0" />
+		<meta name="keywords" content="rss, feed, reader, aggregate, aggregator, multi-feed, multifeed, expand, collapse, expandable" />
+        <meta name="autoRefresh" content="15" />
+
+		<widget:preferences>
+		  <preference name="title" type="text" label="Widget Title" defaultValue="RSS" />
+		  <preference name="titleUrl" type="text" label="Title Link URL" defaultValue="" />
+		  <preference name="url" type="text" label="URL(s) (urls separated by | vertical bar)" defaultValue="" />
+		  <preference name="limit" type="range" label="Total items to display" defaultValue="10" step="1" min="1" max="25" />
+		  <preference name="perFeedLimit" type="range" label="Max items per feed (0 is no limit)" defaultValue="0" step="1" min="0" max="24" />
+		  <preference name="showSite" type="boolean" label="Show Site Names" defaultValue="false" />
+		  <preference name="showTime" type="boolean" label="Show Timestamps" defaultValue="false" />
+		  <preference name="debug" type="boolean" label="Debug" defaultValue="false" />
+		</widget:preferences>
+
+        <!-- Application Standalone emulation files -->
+        <link rel="stylesheet" type="text/css" href="http://uwa.netvibes.com/lib/c/UWA/assets/css/standalone.css" />
+        <script type="text/javascript" src="http://uwa.netvibes.com/lib/c/UWA/js/UWA_Standalone_Alone.js"></script>
+
+		<style>
+			#mrss-content{
+				font: 13px arial,sans-serif;
+				padding: 0 3px;
+			}
+
+			.mrss-item{
+				position: relative;
+				padding-left: 22px;
+				margin: 7px 0;
+			}
+
+			.mrss-expander{
+				cursor: pointer;
+				text-align: center;
+				position: absolute;
+				top: 1px;
+				left: 0;
+				width: 10px;
+				height: 10px;
+
+				line-height: 10px;
+				border: 2px outset gray;
+				border-radius: 4px;
+			}
+
+			#mrss-content .mrss-link{
+				color: blue;
+			}
+
+			#mrss-content .mrss-link:visited{
+				color: purple;
+			}
+
+			.mrss-site{
+				display: inline-block;
+				color: gray;
+				font-style: italic;
+				padding-left: 10px;
+			}
+			
+			.mrss-time{
+				display: inline-block;
+				color: gray;
+				font-style: italic;
+				padding-right: 10px;
+			}
+
+			.mrss-description{
+				max-height: 200px;
+				padding: 5px;
+				overflow: auto;
+				border: 1px solid #ddd;
+				margin: 8px 0;
+			}
+			
+			.mrss-error{
+				color: red;
+				background-color: #ddd;
+				padding: 3px;
+			}
+
+		</style>
+
+
+        <!-- Application JavaScript Source -->
+		<script>
+			/*
+			 * Date Format 1.2.3
+			 * (c) 2007-2009 Steven Levithan <stevenlevithan.com>
+			 * MIT license
+			 *
+			 * Includes enhancements by Scott Trenda <scott.trenda.net>
+			 * and Kris Kowal <cixar.com/~kris.kowal/>
+			 *
+			 * Accepts a date, a mask, or a date and a mask.
+			 * Returns a formatted version of the given date.
+			 * The date defaults to the current date/time.
+			 * The mask defaults to dateFormat.masks.default.
+			 */
+
+			var dateFormat = function () {
+				var	token = /d{1,4}|m{1,4}|yy(?:yy)?|([HhMsTt])\1?|[LloSZ]|"[^"]*"|'[^']*'/g,
+					timezone = /\b(?:[PMCEA][SDP]T|(?:Pacific|Mountain|Central|Eastern|Atlantic) (?:Standard|Daylight|Prevailing) Time|(?:GMT|UTC)(?:[-+]\d{4})?)\b/g,
+					timezoneClip = /[^-+\dA-Z]/g,
+					pad = function (val, len) {
+						val = String(val);
+						len = len || 2;
+						while (val.length < len) val = "0" + val;
+						return val;
+					};
+
+				// Regexes and supporting functions are cached through closure
+				return function (date, mask, utc) {
+					var dF = dateFormat;
+
+					// You can't provide utc if you skip other args (use the "UTC:" mask prefix)
+					if (arguments.length == 1 && Object.prototype.toString.call(date) == "[object String]" && !/\d/.test(date)) {
+						mask = date;
+						date = undefined;
+					}
+
+					// Passing date through Date applies Date.parse, if necessary
+					date = date ? new Date(date) : new Date;
+					if (isNaN(date)) throw SyntaxError("invalid date");
+
+					mask = String(dF.masks[mask] || mask || dF.masks["default"]);
+
+					// Allow setting the utc argument via the mask
+					if (mask.slice(0, 4) == "UTC:") {
+						mask = mask.slice(4);
+						utc = true;
+					}
+
+					var	_ = utc ? "getUTC" : "get",
+						d = date[_ + "Date"](),
+						D = date[_ + "Day"](),
+						m = date[_ + "Month"](),
+						y = date[_ + "FullYear"](),
+						H = date[_ + "Hours"](),
+						M = date[_ + "Minutes"](),
+						s = date[_ + "Seconds"](),
+						L = date[_ + "Milliseconds"](),
+						o = utc ? 0 : date.getTimezoneOffset(),
+						flags = {
+							d:    d,
+							dd:   pad(d),
+							ddd:  dF.i18n.dayNames[D],
+							dddd: dF.i18n.dayNames[D + 7],
+							m:    m + 1,
+							mm:   pad(m + 1),
+							mmm:  dF.i18n.monthNames[m],
+							mmmm: dF.i18n.monthNames[m + 12],
+							yy:   String(y).slice(2),
+							yyyy: y,
+							h:    H % 12 || 12,
+							hh:   pad(H % 12 || 12),
+							H:    H,
+							HH:   pad(H),
+							M:    M,
+							MM:   pad(M),
+							s:    s,
+							ss:   pad(s),
+							l:    pad(L, 3),
+							L:    pad(L > 99 ? Math.round(L / 10) : L),
+							t:    H < 12 ? "a"  : "p",
+							tt:   H < 12 ? "am" : "pm",
+							T:    H < 12 ? "A"  : "P",
+							TT:   H < 12 ? "AM" : "PM",
+							Z:    utc ? "UTC" : (String(date).match(timezone) || [""]).pop().replace(timezoneClip, ""),
+							o:    (o > 0 ? "-" : "+") + pad(Math.floor(Math.abs(o) / 60) * 100 + Math.abs(o) % 60, 4),
+							S:    ["th", "st", "nd", "rd"][d % 10 > 3 ? 0 : (d % 100 - d % 10 != 10) * d % 10]
+						};
+
+					return mask.replace(token, function ($0) {
+						return $0 in flags ? flags[$0] : $0.slice(1, $0.length - 1);
+					});
+				};
+			}();
+
+			// Some common format strings
+			dateFormat.masks = {
+				"default":      "ddd mmm dd yyyy HH:MM:ss",
+				shortDate:      "m/d/yy",
+				mediumDate:     "mmm d, yyyy",
+				longDate:       "mmmm d, yyyy",
+				fullDate:       "dddd, mmmm d, yyyy",
+				shortTime:      "h:MM TT",
+				mediumTime:     "h:MM:ss TT",
+				longTime:       "h:MM:ss TT Z",
+				isoDate:        "yyyy-mm-dd",
+				isoTime:        "HH:MM:ss",
+				isoDateTime:    "yyyy-mm-dd'T'HH:MM:ss",
+				isoUtcDateTime: "UTC:yyyy-mm-dd'T'HH:MM:ss'Z'"
+			};
+
+			// Internationalization strings
+			dateFormat.i18n = {
+				dayNames: [
+					"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
+					"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
+				],
+				monthNames: [
+					"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+					"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"
+				]
+			};
+		</script>
+		
+        <script type="text/javascript">
+		(function(){		
+			
+			/* Helper Functions */
+			function hasClass(element, cls) {
+				return (' ' + element.className + ' ').indexOf(' ' + cls + ' ') > -1;
+			}
+
+			function addEvent(element, evnt, funct) {
+				if (element.attachEvent) return element.attachEvent('on' + evnt, funct);
+				else return element.addEventListener(evnt, funct, false);
+			}
+			
+			function getDateOnlyString(date){
+				return dateFormat(date, "yyyy-mm-dd");
+			}
+			
+			function getTimeOnlyString(date){
+				return dateFormat(date, dateFormat.masks.shortTime);
+			}
+			
+			var today = new Date();
+			var todayString = getDateOnlyString(today);
+			
+			function getDateDisplay(date){
+				var dateString = getDateOnlyString(date);
+				var timeString = getTimeOnlyString(date);
+				
+				if(dateString == todayString){
+					// if current date, only return time
+					return timeString;
+				} else {
+					// if not current date, return date and time
+					return dateString + " " + timeString;
+				}
+			}
+			
+			if (!String.prototype.trim) {
+			  String.prototype.trim = function () {
+				return this.replace(/^\s+|\s+$/g, '');
+			  };
+			}
+
+			function itemSortFunction(item1, item2){
+				var date1 = item1.createdDate;
+				var date2 = item2.createdDate;
+				
+				if(date1 > date2){
+					return -1;
+				} else if (date1 < date2) {
+					return 1;
+				} else {
+					return 0;
+				}
+			}
+			
+			/* Preferences */
+			var prefs = {};  // populated in onload
+							
+			/* Util */
+			function log(msg){
+				if(prefs.debug && console){
+					console.log(msg);
+				}
+			}			
+			
+			/* Objects */
+			
+			// feed object
+			function Feed(url){
+				this.url = url;
+				this.inProcess = false;
+				this.isError = false;
+				this.errorMessage = "";
+				this.items = [];
+				
+				this.fetch = function(callback){
+					var that = this;
+					
+					// clear any items that might be in the object already
+					this.items = [];
+					this.inProcess = true;
+					this.isError = false;
+					this.errorMessage = "";
+					
+					// fetch new items (async)
+					this.feedObj = UWA.Data.request(this.url, {
+						type: "json",
+						proxy: "feed",
+						timeout: 10000, // in milis
+						onComplete: function(result){
+							log("COMPLETE: " + that.url);
+							that.processResult(result);
+							that.inProcess = false;
+							
+							// the feed processes the result, it is not passed on to the callback
+							callback();
+						},
+						onCancel: function(){
+							log("CANCELED: " + that.url);
+							that.inProcess = false;
+						},
+						onFailure: function(){
+							log("FAILED: " + that.url);
+							that.inProcess = false;
+							that.isError = true;
+							that.errorMessage = "Feed request failed.";
+							
+							// the feed processes the result, it is not passed on to the callback
+							callback();
+						},
+						onTimeout: function(){
+							log("TIMED OUT: " + that.url);
+							that.inProcess = false;
+							that.isError = true;
+							that.errorMessage = "Feed request timed out.";
+							
+							// the feed processes the result, it is not passed on to the callback
+							callback();
+						}
+					});
+				};
+				
+				this.processResult = function(result){
+					this.items = result.items;
+					
+					// convert the created date from string to Date object
+					this.items.forEach(function(item){
+						try {
+							if(item.createdDate){
+								var createdDate = new Date(item.createdDate);
+								
+								if(isNaN(createdDate.getTime())){
+									throw "item.createdDate is invalid (" + item.createdDate + ") for URL: " + item.link;	
+								}
+
+								item.createdDate = createdDate;
+							} else {
+								throw "item.createdDate is undefined for URL: " + item.link;
+							}
+						} catch(e){
+							log("Exception caught while trying to convert date from string: '" + item.createdDate + "'" +
+							    " Exception: " + e);
+							
+							// default to way in the past so that missing dates come last
+							item.createdDate = new Date(1900, 1,1);
+						}
+					}, this);	
+					
+					// sort the list by date, some feeds may not return sorted results
+					this.items.sort(itemSortFunction);
+				};
+				
+				this.cancel = function(){
+					if(this.inProcess){
+						log("Canceling Feed");
+						this.feedObj.cancel();
+					}
+				}
+			}
+			
+			function RSSWidget(){
+				this.firstRun = true;
+				this.feeds = [];
+				
+				this.onLoad = function () {
+					var container = document.getElementById("mrss-content");
+					container.textContent = "Loading...";
+					
+					prefs = {
+						title: widget.getValue('title'),
+						titleUrl: widget.getValue('titleUrl'),
+						url: widget.getValue('url'),
+						showSite: widget.getBool('showSite'),
+						showTime: widget.getBool('showTime'),
+						limit: widget.getInt('limit'),
+						perFeedLimit: widget.getInt('perFeedLimit'),
+						debug: widget.getBool('debug')
+					};
+
+					if(prefs.perFeedLimit == 0) prefs.perFeedLimit = prefs.limit;
+					
+					// set title to link if one exists
+					if(prefs.titleUrl && prefs.titleUrl.length > 0){
+						prefs.title = "<a href='" + prefs.titleUrl + "'>" + prefs.title + "</a>";
+					}
+					
+					widget.setTitle(prefs.title);
+					
+					if(!prefs.url || prefs.url.length == 0){
+						container.textContent = "No feed URL(s) configured.";
+						return false;
+					}
+					
+					// fetch each feed
+					var urlString = prefs.url;
+					var urls = urlString.split("|");
+
+					// cancel any feeds which are already in process
+					this.feeds.forEach(function(feed){
+						feed.cancel();
+					});
+					
+					// clear the feed list
+					this.feeds = [];
+					
+					urls.forEach(function(url){
+						var url = url.trim();
+						
+						if(url.length > 0){
+							var that = this;
+							var feed = new Feed(url);
+							
+							feed.fetch(function(){
+								that.display();
+							});
+							
+							this.feeds.push(feed);
+						}
+					}, this);	
+
+					// event delegation for expand/collapse of dynamically loaded items
+					if(this.firstRun){
+						addEvent(container, "click", function (event) {
+
+							event = event || window.event;
+							var target = event.target || event.srcElement;
+
+							if (hasClass(target, "mrss-expander")) {
+								// click on an expander, handle it
+								var description = target.parentNode.querySelector(".mrss-description");
+
+								if (description.style.display == "none") {
+									description.style.display = "block";
+									target.style.lineHeight = "9px";
+									target.textContent = "-";
+								} else {
+									description.style.display = "none";
+									target.style.lineHeight = "10px";
+									target.textContent = "+";
+								}
+							}
+						});
+					}
+
+					this.firstRun = false;
+				};
+				
+				this.display = function () {
+				
+					for(var i = 0; i < this.feeds.length; i++){
+						if(this.feeds[i].inProcess){
+							log("display(): Not all feeds are fetched, returning");
+							return false;
+						}						
+					}
+					
+					var container = document.getElementById("mrss-content");
+					container.innerHTML = ""; // clear the loading message
+					
+					// combine the feed items and sort together by date
+					var itemLists = [];
+					this.feeds.forEach(function(feed){
+						if(feed.isError){
+							// if the feed errored, add error message and don't attempt to combine results.
+							var errorMsg = widget.createElement("div");
+							errorMsg.className = "mrss-error";
+							errorMsg.innerHTML = feed.url + " : " + feed.errorMessage;
+							container.appendChild(errorMsg);
+						} else {
+							// only add as many items from each feed as the per feed limit
+							itemLists.push(feed.items.slice(0, prefs.perFeedLimit));
+						}
+					}, this);
+					
+					var items = [].concat.apply([], itemLists);
+					items.sort(itemSortFunction);
+					
+					var feedList = widget.createElement('div');
+
+					for (var i = 0; i < Math.min(items.length, prefs.limit); i++) {
+
+						var item = items[i];
+
+						var itemDiv = widget.createElement("div");
+						var title = widget.createElement("div");
+						var link = widget.createElement("a");
+						var expander = widget.createElement("div");
+						var description = widget.createElement("div");
+
+						itemDiv.className = "mrss-item";
+
+						title.className = "mrss-title";
+						itemDiv.appendChild(title);
+						
+						if(prefs.showTime){
+							var time = widget.createElement("span");
+							time.textContent = getDateDisplay(item.createdDate);
+							time.className = "mrss-time";
+							title.appendChild(time);
+						}
+
+						link.href = item.link;
+						link.className = "mrss-link";
+						link.innerHTML = item.title;
+						link.target = "_blank";
+						title.appendChild(link);
+
+						if(prefs.showSite){
+							var site = widget.createElement("span");
+							site.textContent = link.hostname;
+							site.className = "mrss-site";
+							title.appendChild(site);
+						}
+
+						description.innerHTML = item.content;
+						description.className = "mrss-description";
+						description.style.display = "none";
+						itemDiv.appendChild(description);
+
+						expander.textContent = "+";
+						expander.className = "mrss-expander";
+						itemDiv.appendChild(expander);
+
+						feedList.appendChild(itemDiv);
+					}
+
+					container.appendChild(feedList);
+				};
+			}
+
+			/* Init */
+			var rssWidget = new RSSWidget();
+			
+			widget.addEvent('onLoad', function(){
+				rssWidget.onLoad();
+			});			
+		})();
+		</script>
+      </head>
+      <body>
+            <div id="mrss-content">Loading...</div>
+      </body>
+</html>
